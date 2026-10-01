@@ -1,19 +1,37 @@
-# AlwaysOnTopper
-Simple app for Windows, adds 'Always on top' item to system menu of every window.
+# AlwaysOnTopper 修正版
 
-![Screenshot](screenshot.png)
+保留原方案：为其他进程的标准 Windows 系统菜单添加 `Always on top`。
 
-## How to use
-Make sure that .NET Framework 4.5.2 is installed. Just run **AlwaysOnTopper.exe**. It doesn't have any GUI. Every window should have "Always on top" in menu now. It's recommended to add this app to autorun.
+## 使用
 
-## Author/contacts
+1. 先退出旧版，避免两个程序同时处理同一次菜单点击。
+2. 运行 `AlwaysOnTopper.exe`。程序驻留在通知区域，约半秒内为可见窗口添加菜单项。
+3. 右键窗口标题栏，或按 `Alt+Space`，点击 `Always on top`。第一次置顶，再点一次取消；勾选以窗口的实际状态为准。
+4. 正常退出：右键通知区域图标，选择 `Exit and restore windows`。程序删除自己添加的菜单项，并恢复它改动过的目标窗口在首次切换前的置顶状态。原本就置顶的窗口会恢复为置顶。
 
-**Alexey 'Cluster' Avdyukhin**
+## 修正内容
 
-clusterrr@clusterrr.com
+- 在系统菜单打开时记录所属窗口及弹出菜单 HWND，处理点击事件到达时弹出窗口已经销毁的情况；不再以当前前台窗口猜测目标。
+- 整个程序只注册两个全局钩子：一个监听菜单调用，一个监听前台及菜单生命周期。不再每个窗口注册一个覆盖整个桌面的钩子。
+- 保存回调委托的强引用；排队处理重入事件，避免静默丢弃点击。
+- 修正窗口句柄为 `IntPtr`；由 WinForms 提供消息循环，删除原来的错误 `GetMessage` 声明。
+- 动态选择低于 `0xF000`、低四位为零且未占用的菜单命令 ID；按 ID 而非固定菜单位置更新状态。
+- 用窗口属性和菜单项数据标记本程序的改动，防止误认句柄复用或其他程序的菜单项。目标应用重建菜单时保留原始窗口状态。
+- 检查关键 API 返回值。采用异步 `SetWindowPos` 避免被不响应的目标线程阻塞，随后读取实际状态确认切换；在请求未完成时不重复发送切换。
+- 清理时只删除自己的菜单项，不重置整个系统菜单。支持托盘正常退出及 Windows 会话结束时的清理。
 
-[https://github.com/ClusterM](https://github.com/ClusterM "https://github.com/ClusterM")
+## 编译与验证
 
-[http://clusterrr.com](http://clusterrr.com "http://clusterrr.com")
+源码使用 C# 5 兼容语法和 .NET Framework 4.x WinForms，无第三方依赖。执行 `Build.ps1` 可重新生成可执行文件；也可将 `Program.cs` 放入现有 Windows Forms 项目并设为入口。
 
-PayPal for donations: clusterrr@clusterrr.com
+执行 `Verify.ps1` 可运行自动回归测试。测试会创建自己的独立进程及临时测试窗口，短暂打开这些测试窗口的系统菜单；不会向用户当前输入焦点发送按键。测试覆盖跨进程置顶/取消、真实系统菜单事件、菜单重排、命令冲突、GC 后回调、菜单重建及退出恢复。
+
+已在本机验证 64 位程序操作 64 位及 32 位测试进程；每组 23 项检查通过。测试针对标准 WinForms 系统菜单，不能代表所有第三方应用。
+
+## 适用范围
+
+仅支持真实的 Windows 系统菜单。自行绘制标题栏/菜单的应用可能不提供此菜单。操作以管理员权限运行的窗口时，本程序通常也需要以管理员权限运行。目标应用如果自行持续设置置顶，可能覆盖本程序的请求。
+
+失败信息写入可执行文件旁的 `AlwaysOnTopper.log`；重复错误限频记录。请将程序放在可写目录中。异步状态请求超过三秒仍未生效会写日志，菜单勾选不会伪装成成功。
+
+任务管理器强制结束、崩溃或断电不能保证执行清理；请使用托盘退出。窗口所有者与其拥有的窗口之间仍遵循 Windows 原生置顶联动规则。本程序恢复的是直接操作过的目标窗口。
